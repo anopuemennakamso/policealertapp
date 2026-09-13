@@ -33,6 +33,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def read_root():
     return {"status": "online", "message": "SOS Emergency API Server is running"}
 
+
+@app.get("/")
+def home():
+    return {"status": "ok", "message": "FastAPI is running on Vercel"}
 # --- AUTHENTICATION ENDPOINTS ---
 LAW_ENFORCEMENT_SECRET = "POLICE2026"
 

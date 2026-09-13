@@ -35,6 +35,7 @@ def read_root():
 
 # --- AUTHENTICATION ENDPOINTS ---
 LAW_ENFORCEMENT_SECRET = "POLICE2026"
+
 @app.post("/api/auth/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     clean_email = user.email.strip().lower()
@@ -42,6 +43,7 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Validate passkey ONLY when user role is 'responder'
     if user.role == "responder":
         if not user.badge_code or user.badge_code != LAW_ENFORCEMENT_SECRET:
             raise HTTPException(
@@ -50,13 +52,16 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
             )
 
     hashed_pwd = hash_password(user.password)
+    
     new_user = models.User(
         full_name=user.full_name,
         email=clean_email,
         phone_number=user.phone_number,
         hashed_password=hashed_pwd,
-        role=user.role if user.role else "citizen"
+        role=user.role if user.role else "citizen",
+        badge_code=user.badge_code if user.role == "responder" else None
     )
+    
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -91,6 +96,8 @@ def trigger_alert(user_id: int, alert: schemas.AlertCreate, db: Session = Depend
         user_id=user_id,
         latitude=alert.latitude,
         longitude=alert.longitude,
+        emergency_type=alert.emergency_type or "General SOS",
+        description=alert.description,
         status="TRIGGERED"
     )
     db.add(new_alert)
@@ -106,7 +113,17 @@ def get_user_alerts(user_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/responder/alerts", response_model=List[schemas.AlertResponse])
 def get_all_active_alerts(db: Session = Depends(get_db)):
-    return db.query(models.Alert).filter(models.Alert.status == "TRIGGERED").all()
+    return db.query(models.Alert).filter(models.Alert.status != "RESOLVED").all()
+
+@app.patch("/api/responder/alerts/{alert_id}/acknowledge")
+def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)):
+    alert = db.query(models.Alert).filter(models.Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    alert.status = "DISPATCHED"
+    db.commit()
+    return {"status": "success", "message": f"Alert {alert_id} acknowledged and marked as DISPATCHED"}
 
 @app.patch("/api/responder/alerts/{alert_id}/resolve")
 def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
@@ -117,3 +134,48 @@ def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
     alert.status = "RESOLVED"
     db.commit()
     return {"status": "success", "message": f"Alert {alert_id} marked as RESOLVED"}
+
+
+@app.get("/api/users/{user_id}", response_model=schemas.UserProfileResponse)
+def get_user_profile(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@app.put("/api/users/{user_id}", response_model=schemas.UserProfileResponse)
+def update_user_profile(user_id: int, profile: schemas.UserUpdate, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if profile.full_name:
+        user.full_name = profile.full_name
+    if profile.phone_number:
+        user.phone_number = profile.phone_number
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+@app.post("/api/users/{user_id}/contacts", response_model=schemas.ContactResponse, status_code=201)
+def add_emergency_contact(user_id: int, contact: schemas.ContactCreate, db: Session = Depends(get_db)):
+    new_contact = models.EmergencyContact(
+        user_id=user_id,
+        name=contact.name,
+        phone_number=contact.phone_number,
+        relationship_type=contact.relationship_type
+    )
+    db.add(new_contact)
+    db.commit()
+    db.refresh(new_contact)
+    return new_contact
+
+@app.delete("/api/users/contacts/{contact_id}", status_code=200)
+def delete_emergency_contact(contact_id: int, db: Session = Depends(get_db)):
+    contact = db.query(models.EmergencyContact).filter(models.EmergencyContact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    db.delete(contact)
+    db.commit()
+    return {"message": "Contact deleted successfully"}

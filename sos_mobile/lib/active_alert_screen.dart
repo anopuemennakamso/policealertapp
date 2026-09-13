@@ -1,9 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+
 import 'location_service.dart';
+import 'api_service.dart';
 
 class ActiveAlertScreen extends StatefulWidget {
-  const ActiveAlertScreen({super.key});
+  final int? alertId;
+
+  const ActiveAlertScreen({super.key, this.alertId});
 
   @override
   State<ActiveAlertScreen> createState() => _ActiveAlertScreenState();
@@ -11,24 +18,65 @@ class ActiveAlertScreen extends StatefulWidget {
 
 class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
   Position? _currentPosition;
+  String? _address;
   bool _isLoadingLocation = true;
+  bool _isCancelling = false;
   String? _locationError;
+  StreamSubscription<Position>? _positionSubscription;
 
   @override
   void initState() {
     super.initState();
-    _fetchLiveLocation();
+    _startLocationUpdates();
   }
 
-  Future<void> _fetchLiveLocation() async {
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Listens to real-time location stream and updates reverse geocoding on movement
+  Future<void> _startLocationUpdates() async {
     try {
-      final position = await LocationService.getCurrentLocation();
-      if (mounted) {
+      // First initial location check
+      final initialPosition = await LocationService.getCurrentLocation();
+      if (mounted && initialPosition != null) {
         setState(() {
-          _currentPosition = position;
+          _currentPosition = initialPosition;
           _isLoadingLocation = false;
         });
+        _updateAddress(initialPosition.latitude, initialPosition.longitude);
       }
+
+      // Stream continuous location changes
+      const LocationSettings locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5, // Update every 5 meters
+      );
+
+      _positionSubscription =
+          Geolocator.getPositionStream(locationSettings: locationSettings)
+              .listen(
+                (Position position) {
+                  if (mounted) {
+                    setState(() {
+                      _currentPosition = position;
+                      _isLoadingLocation = false;
+                      _locationError = null;
+                    });
+                    _updateAddress(position.latitude, position.longitude);
+                  }
+                },
+                onError: (error) {
+                  if (mounted) {
+                    setState(() {
+                      _locationError = error.toString();
+                      _isLoadingLocation = false;
+                    });
+                  }
+                },
+              );
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -36,6 +84,48 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
           _isLoadingLocation = false;
         });
       }
+    }
+  }
+
+  Future<void> _updateAddress(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty && mounted) {
+        Placemark place = placemarks.first;
+        String street = place.street ?? '';
+        String locality = place.locality ?? place.subAdministrativeArea ?? '';
+        String state = place.administrativeArea ?? '';
+
+        List<String> parts = [
+          street,
+          locality,
+          state,
+        ].where((p) => p.trim().isNotEmpty).toList();
+
+        setState(() {
+          _address = parts.isNotEmpty ? parts.join(', ') : '$lat, $lng';
+        });
+      }
+    } catch (_) {
+      if (mounted && _address == null) {
+        setState(() {
+          _address = '$lat, $lng';
+        });
+      }
+    }
+  }
+
+  /// Cancels the SOS active status on backend before leaving
+  Future<void> _handleCancelAlert() async {
+    setState(() => _isCancelling = true);
+
+    if (widget.alertId != null) {
+      await ApiService.resolveAlert(widget.alertId!);
+    }
+
+    if (mounted) {
+      setState(() => _isCancelling = false);
+      Navigator.pop(context);
     }
   }
 
@@ -86,12 +176,9 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Your location is being broadcasted to the nearest station and emergency contacts.',
+                'Your live location is being broadcasted to responders and emergency contacts.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF64748B),
-                ),
+                style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
               ),
 
               const SizedBox(height: 32),
@@ -109,18 +196,38 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      children: const [
-                        Icon(Icons.my_location, color: Color(0xFFDC2626), size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'YOUR BROADCASTED GPS',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF0F172A),
-                            letterSpacing: 0.8,
-                          ),
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(
+                              Icons.my_location,
+                              color: Color(0xFFDC2626),
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'YOUR BROADCASTED LOCATION',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0F172A),
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
                         ),
+                        if (!_isLoadingLocation)
+                          IconButton(
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(
+                              Icons.refresh,
+                              size: 18,
+                              color: Color(0xFF64748B),
+                            ),
+                            onPressed: _startLocationUpdates,
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -128,8 +235,10 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
                     if (_isLoadingLocation)
                       const Center(
                         child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8.0),
-                          child: CircularProgressIndicator(color: Color(0xFFDC2626)),
+                          padding: EdgeInsets.symmetric(vertical: 12.0),
+                          child: CircularProgressIndicator(
+                            color: Color(0xFFDC2626),
+                          ),
                         ),
                       )
                     else if (_locationError != null)
@@ -146,28 +255,27 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Latitude: ${_currentPosition?.latitude.toStringAsFixed(6)}',
+                            _address ?? 'Resolving location address...',
                             style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
                               color: Color(0xFF0F172A),
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           Text(
-                            'Longitude: ${_currentPosition?.longitude.toStringAsFixed(6)}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Accuracy: ±${_currentPosition?.accuracy.toStringAsFixed(1)}m',
+                            'Lat: ${_currentPosition?.latitude.toStringAsFixed(6)}, Long: ${_currentPosition?.longitude.toStringAsFixed(6)}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Accuracy: ±${_currentPosition?.accuracy.toStringAsFixed(1)}m',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF94A3B8),
                             ),
                           ),
                         ],
@@ -183,7 +291,7 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: _isCancelling ? null : _handleCancelAlert,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0F172A),
                     elevation: 0,
@@ -191,14 +299,23 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    'Cancel SOS Alert',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: _isCancelling
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'Cancel SOS Alert',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ],

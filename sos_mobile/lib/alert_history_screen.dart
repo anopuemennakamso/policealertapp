@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'api_service.dart';
 
 class AlertHistoryScreen extends StatefulWidget {
@@ -21,6 +22,26 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
     setState(() {
       _alertsFuture = ApiService.fetchUserAlerts(1); // Hardcoded user_id for dev
     });
+  }
+
+  /// Helper function to convert raw coordinates into a street address
+  Future<String> _getAddressFromCoordinates(double? lat, double? lng) async {
+    if (lat == null || lng == null) return 'Location unavailable';
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks.first;
+        String street = place.street ?? '';
+        String locality = place.locality ?? place.subAdministrativeArea ?? '';
+        String state = place.administrativeArea ?? '';
+
+        List<String> parts = [street, locality, state].where((p) => p.trim().isNotEmpty).toList();
+        return parts.isNotEmpty ? parts.join(', ') : 'Lat: ${lat.toStringAsFixed(4)}, Long: ${lng.toStringAsFixed(4)}';
+      }
+      return 'Lat: ${lat.toStringAsFixed(4)}, Long: ${lng.toStringAsFixed(4)}';
+    } catch (e) {
+      return 'Lat: ${lat.toStringAsFixed(4)}, Long: ${lng.toStringAsFixed(4)}';
+    }
   }
 
   @override
@@ -82,8 +103,8 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
               itemBuilder: (context, index) {
                 final alert = alerts[index];
                 final status = alert['status'] ?? 'TRIGGERED';
-                final lat = alert['latitude'];
-                final long = alert['longitude'];
+                final double? lat = alert['latitude'] != null ? (alert['latitude'] as num).toDouble() : null;
+                final double? long = alert['longitude'] != null ? (alert['longitude'] as num).toDouble() : null;
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -109,9 +130,37 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                         color: Color(0xFF0F172A),
                       ),
                     ),
-                    subtitle: Text(
-                      'Lat: ${lat?.toStringAsFixed(4)}, Long: ${long?.toStringAsFixed(4)}',
-                      style: const TextStyle(color: Color(0xFF64748B)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        FutureBuilder<String>(
+                          future: _getAddressFromCoordinates(lat, long),
+                          builder: (context, addressSnapshot) {
+                            if (addressSnapshot.connectionState == ConnectionState.waiting) {
+                              return const Text(
+                                'Resolving address...',
+                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                              );
+                            }
+                            return Text(
+                              addressSnapshot.data ?? 'Location unavailable',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF0F172A),
+                              ),
+                            );
+                          },
+                        ),
+                        if (lat != null && long != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Coords: ${lat.toStringAsFixed(4)}, ${long.toStringAsFixed(4)}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ],
                     ),
                     trailing: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

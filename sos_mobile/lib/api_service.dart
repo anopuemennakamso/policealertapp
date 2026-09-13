@@ -1,15 +1,16 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Update base URL depending on your environment:
+  // Base URL setup:
   // - Chrome / Flutter Web / Windows Desktop: 'http://127.0.0.1:8000'
   // - Android Emulator: 'http://10.0.2.2:8000'
   // - Physical Phone: 'http://<YOUR_COMPUTER_LOCAL_IP>:8000'
   static const String baseUrl = 'http://127.0.0.1:8000';
 
   /// Register user POST -> /api/auth/register
-  static Future<bool> registerUser({
+  static Future<Map<String, dynamic>> registerUser({
     required String fullName,
     required String email,
     required String phoneNumber,
@@ -33,13 +34,27 @@ class ApiService {
         }),
       );
 
-      print('REGISTER Status Code: ${response.statusCode}');
-      print('REGISTER Response Body: ${response.body}');
+      debugPrint('REGISTER Status Code: ${response.statusCode}');
+      debugPrint('REGISTER Response Body: ${response.body}');
 
-      return response.statusCode == 201 || response.statusCode == 200;
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return {'success': true};
+      } else {
+        String message = 'Registration failed.';
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map && data.containsKey('detail')) {
+            message = data['detail'].toString();
+          }
+        } catch (_) {}
+        return {'success': false, 'message': message};
+      }
     } catch (e) {
-      print('REGISTER Network Exception: $e');
-      return false;
+      debugPrint('REGISTER Network Exception: $e');
+      return {
+        'success': false,
+        'message': 'Network error. Please check server connection.'
+      };
     }
   }
 
@@ -60,15 +75,15 @@ class ApiService {
         }),
       );
 
-      print('LOGIN Status Code: ${response.statusCode}');
-      print('LOGIN Response Body: ${response.body}');
+      debugPrint('LOGIN Status Code: ${response.statusCode}');
+      debugPrint('LOGIN Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
       return null;
     } catch (e) {
-      print('LOGIN Network Exception: $e');
+      debugPrint('LOGIN Network Exception: $e');
       return null;
     }
   }
@@ -78,6 +93,8 @@ class ApiService {
     required int userId,
     required double latitude,
     required double longitude,
+    String emergencyType = 'General SOS',
+    String? description,
   }) async {
     final url = Uri.parse('$baseUrl/api/alerts/$userId');
 
@@ -88,15 +105,17 @@ class ApiService {
         body: jsonEncode({
           'latitude': latitude,
           'longitude': longitude,
+          'emergency_type': emergencyType,
+          'description': description,
         }),
       );
 
-      print('TRIGGER ALERT Status Code: ${response.statusCode}');
-      print('TRIGGER ALERT Response Body: ${response.body}');
+      debugPrint('TRIGGER ALERT Status Code: ${response.statusCode}');
+      debugPrint('TRIGGER ALERT Response Body: ${response.body}');
 
       return response.statusCode == 201 || response.statusCode == 200;
     } catch (e) {
-      print('TRIGGER ALERT Network Exception: $e');
+      debugPrint('TRIGGER ALERT Network Exception: $e');
       return false;
     }
   }
@@ -111,8 +130,8 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
       );
 
-      print('FETCH ALERTS Status Code: ${response.statusCode}');
-      print('FETCH ALERTS Response Body: ${response.body}');
+      debugPrint('FETCH ALERTS Status Code: ${response.statusCode}');
+      debugPrint('FETCH ALERTS Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
@@ -120,7 +139,7 @@ class ApiService {
       }
       return [];
     } catch (e) {
-      print('FETCH ALERTS Exception: $e');
+      debugPrint('FETCH ALERTS Exception: $e');
       return [];
     }
   }
@@ -135,8 +154,8 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
       );
 
-      print('FETCH RESPONDER ALERTS Status Code: ${response.statusCode}');
-      print('FETCH RESPONDER ALERTS Response Body: ${response.body}');
+      debugPrint('FETCH RESPONDER ALERTS Status Code: ${response.statusCode}');
+      debugPrint('FETCH RESPONDER ALERTS Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
@@ -144,8 +163,32 @@ class ApiService {
       }
       return [];
     } catch (e) {
-      print('FETCH RESPONDER ALERTS Exception: $e');
+      debugPrint('FETCH RESPONDER ALERTS Exception: $e');
       return [];
+    }
+  }
+
+  /// Acknowledge an active alert PATCH -> /api/responder/alerts/{alert_id}/acknowledge
+  static Future<bool> acknowledgeAlert(int alertId) async {
+    final url = Uri.parse('$baseUrl/api/responder/alerts/$alertId/acknowledge');
+
+    try {
+      final response = await http.patch(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'status': 'DISPATCHED',
+          'message': 'Unit en route to location.',
+        }),
+      );
+
+      debugPrint('ACKNOWLEDGE ALERT Status Code: ${response.statusCode}');
+      debugPrint('ACKNOWLEDGE ALERT Response Body: ${response.body}');
+
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error acknowledging alert: $e');
+      return false;
     }
   }
 
@@ -159,12 +202,80 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
       );
 
-      print('RESOLVE ALERT Status Code: ${response.statusCode}');
-      print('RESOLVE ALERT Response Body: ${response.body}');
+      debugPrint('RESOLVE ALERT Status Code: ${response.statusCode}');
+      debugPrint('RESOLVE ALERT Response Body: ${response.body}');
 
       return response.statusCode == 200;
     } catch (e) {
-      print('RESOLVE ALERT Exception: $e');
+      debugPrint('RESOLVE ALERT Exception: $e');
+      return false;
+    }
+  }
+
+  /// Fetch User Profile GET -> /api/users/{user_id}
+  static Future<Map<String, dynamic>?> fetchUserProfile(int userId) async {
+    final url = Uri.parse('$baseUrl/api/users/$userId');
+    try {
+      final response = await http.get(
+        url,
+        headers: {'Content-Type': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Error fetching profile: $e');
+    }
+    return null;
+  }
+
+  /// Update User Profile PUT -> /api/users/{user_id}
+  static Future<bool> updateUserProfile(int userId, String name, String phone) async {
+    final url = Uri.parse('$baseUrl/api/users/$userId');
+    try {
+      final response = await http.put(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'full_name': name, 'phone_number': phone}),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error updating profile: $e');
+      return false;
+    }
+  }
+
+  /// Add Emergency Contact POST -> /api/users/{user_id}/contacts
+  static Future<bool> addContact(int userId, String name, String phone, String relation) async {
+    final url = Uri.parse('$baseUrl/api/users/$userId/contacts');
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'phone_number': phone,
+          'relationship_type': relation,
+        }),
+      );
+      return response.statusCode == 201 || response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error adding contact: $e');
+      return false;
+    }
+  }
+
+  /// Delete Emergency Contact DELETE -> /api/users/contacts/{contact_id}
+  static Future<bool> deleteContact(int contactId) async {
+    final url = Uri.parse('$baseUrl/api/users/contacts/$contactId');
+    try {
+      final response = await http.delete(
+        url,
+        headers: {'Content-Type': 'application/json'},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error deleting contact: $e');
       return false;
     }
   }

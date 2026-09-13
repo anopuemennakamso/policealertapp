@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'api_service.dart';
 import 'home_screen.dart'; // Citizen view
 import 'law_enforcement_screen.dart'; // Responder view
@@ -13,7 +15,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  String _selectedRole = 'citizen'; // Default selected role: 'citizen' or 'responder'
+  String _selectedRole =
+      'citizen'; // Default selected role: 'citizen' or 'responder'
   bool _isLoading = false;
 
   void _handleLogin() async {
@@ -39,11 +42,18 @@ class _LoginScreenState extends State<LoginScreen> {
     if (response != null && response['status'] == 'success') {
       final String userRole = response['role'] ?? 'citizen';
 
+      if (response['user_id'] != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('user_id', response['user_id']);
+      }
+
       // Check if the role returned matches what they selected to sign in as
       if (userRole != _selectedRole) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('This account is registered as a $userRole, not a $_selectedRole.'),
+            content: Text(
+              'This account is registered as a $userRole, not a $_selectedRole.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -54,7 +64,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (userRole == 'responder') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const LawEnforcementDashboard()),
+          MaterialPageRoute(
+            builder: (context) => const LawEnforcementDashboard(),
+          ),
         );
       } else {
         Navigator.pushReplacement(
@@ -84,7 +96,11 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
-                const Icon(Icons.shield_outlined, size: 70, color: Color(0xFFDC2626)),
+                const Icon(
+                  Icons.shield_outlined,
+                  size: 70,
+                  color: Color(0xFFDC2626),
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   'Emergency SOS',
@@ -109,11 +125,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _selectedRole = 'citizen'),
+                          onTap: () =>
+                              setState(() => _selectedRole = 'citizen'),
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: _selectedRole == 'citizen' ? const Color(0xFFDC2626) : Colors.transparent,
+                              color: _selectedRole == 'citizen'
+                                  ? const Color(0xFFDC2626)
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -121,7 +140,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: _selectedRole == 'citizen' ? Colors.white : Colors.black87,
+                                color: _selectedRole == 'citizen'
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
                           ),
@@ -129,11 +150,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _selectedRole = 'responder'),
+                          onTap: () =>
+                              setState(() => _selectedRole = 'responder'),
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: _selectedRole == 'responder' ? const Color(0xFF0F172A) : Colors.transparent,
+                              color: _selectedRole == 'responder'
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -141,7 +165,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: _selectedRole == 'responder' ? Colors.white : Colors.black87,
+                                color: _selectedRole == 'responder'
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
                           ),
@@ -176,13 +202,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: _isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: _selectedRole == 'responder' ? const Color(0xFF0F172A) : const Color(0xFFDC2626),
+                    backgroundColor: _selectedRole == 'responder'
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFFDC2626),
                   ),
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
-                          _selectedRole == 'responder' ? 'Sign In as Officer' : 'Sign In as Citizen',
-                          style: const TextStyle(fontSize: 16, color: Colors.white),
+                          _selectedRole == 'responder'
+                              ? 'Sign In as Officer'
+                              : 'Sign In as Citizen',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.white,
+                          ),
                         ),
                 ),
               ],

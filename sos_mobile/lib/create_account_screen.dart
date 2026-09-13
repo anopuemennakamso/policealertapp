@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'api_service.dart';
 import 'login_screen.dart';
 
@@ -26,7 +27,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     final password = _passwordController.text.trim();
     final badgeCode = _badgeCodeController.text.trim();
 
-    if (fullName.isEmpty || email.isEmpty || phone.isEmpty || password.isEmpty) {
+    if (fullName.isEmpty ||
+        email.isEmpty ||
+        phone.isEmpty ||
+        password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all required fields')),
       );
@@ -36,7 +40,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     if (_selectedRole == 'responder' && badgeCode.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Agency Passkey / Badge ID is required for Law Enforcement'),
+          content: Text(
+            'Agency Passkey / Badge ID is required for Law Enforcement',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -45,7 +51,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
 
     setState(() => _isLoading = true);
 
-    final success = await ApiService.registerUser(
+    final result = await ApiService.registerUser(
       fullName: fullName,
       email: email,
       phoneNumber: phone,
@@ -55,8 +61,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     );
 
     setState(() => _isLoading = false);
+    if (!mounted) return;
 
-    if (success) {
+    if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -70,13 +77,25 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
         MaterialPageRoute(builder: (context) => const LoginScreen()),
       );
     } else {
+      final String errorMessage =
+          result['message'] ??
+          (_selectedRole == 'responder'
+              ? 'Registration failed. Check your badge passkey or email.'
+              : 'Registration failed. Please check your details or email.');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registration failed. Check your badge passkey or email.'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
       );
     }
+  }
+
+  @override
+  void dispose() {
+    _fullNameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _badgeCodeController.dispose();
+    super.dispose();
   }
 
   @override
@@ -117,11 +136,16 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _selectedRole = 'citizen'),
+                          onTap: () => setState(() {
+                            _selectedRole = 'citizen';
+                            _badgeCodeController.clear();
+                          }),
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: _selectedRole == 'citizen' ? const Color(0xFFDC2626) : Colors.transparent,
+                              color: _selectedRole == 'citizen'
+                                  ? const Color(0xFFDC2626)
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -129,7 +153,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: _selectedRole == 'citizen' ? Colors.white : Colors.black87,
+                                color: _selectedRole == 'citizen'
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
                           ),
@@ -137,11 +163,14 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                       ),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _selectedRole = 'responder'),
+                          onTap: () =>
+                              setState(() => _selectedRole = 'responder'),
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: _selectedRole == 'responder' ? const Color(0xFF0F172A) : Colors.transparent,
+                              color: _selectedRole == 'responder'
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -149,7 +178,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: _selectedRole == 'responder' ? Colors.white : Colors.black87,
+                                color: _selectedRole == 'responder'
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
                           ),
@@ -171,6 +202,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
                     labelText: 'Email Address',
                     border: OutlineInputBorder(),
@@ -180,6 +212,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _phoneController,
+                  keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
                     labelText: 'Phone Number',
                     border: OutlineInputBorder(),
@@ -205,7 +238,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                     obscureText: true,
                     decoration: const InputDecoration(
                       labelText: 'Agency Passkey / Badge ID',
-                      hintText: 'Enter official unit authorization key',
+                      hintText: 'Enter POLICE2026',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.verified_user_outlined),
                     ),
@@ -217,13 +250,20 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                   onPressed: _isLoading ? null : _handleRegister,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: _selectedRole == 'responder' ? const Color(0xFF0F172A) : const Color(0xFFDC2626),
+                    backgroundColor: _selectedRole == 'responder'
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFFDC2626),
                   ),
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
-                          _selectedRole == 'responder' ? 'Register Law Enforcement' : 'Register Citizen Account',
-                          style: const TextStyle(fontSize: 16, color: Colors.white),
+                          _selectedRole == 'responder'
+                              ? 'Register Law Enforcement'
+                              : 'Register Citizen Account',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.white,
+                          ),
                         ),
                 ),
               ],

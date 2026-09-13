@@ -20,6 +20,19 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isHolding = false;
   Timer? _timer;
 
+  // Controllers for Emergency Modal
+  final TextEditingController _descriptionController = TextEditingController();
+  String _selectedEmergencyType = 'Medical Emergency';
+
+  final List<String> _emergencyTypes = [
+    'Medical Emergency',
+    'Armed Robbery / Assault',
+    'Fire Emergency',
+    'Kidnapping / Abduction',
+    'Vehicle Accident',
+    'General SOS / Other',
+  ];
+
   void _startHolding() {
     setState(() {
       _isHolding = true;
@@ -32,7 +45,8 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_pressProgress >= 1.0) {
           _pressProgress = 1.0;
           _timer?.cancel();
-          _triggerSOSAlert();
+          _stopHolding();
+          _showEmergencyDialog(); // Open details sheet when hold duration finishes
         }
       });
     });
@@ -93,6 +107,99 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // --- SHOW EMERGENCY DETAILS DIALOG ---
+  void _showEmergencyDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                top: 20,
+                left: 20,
+                right: 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Specify Emergency Details',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Category Dropdown
+                  DropdownButtonFormField<String>(
+                    value: _selectedEmergencyType,
+                    decoration: const InputDecoration(
+                      labelText: 'Emergency Category',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626)),
+                    ),
+                    items: _emergencyTypes.map((type) {
+                      return DropdownMenuItem(value: type, child: Text(type));
+                    }).toList(),
+                    onChanged: (val) {
+                      setModalState(() {
+                        _selectedEmergencyType = val!;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Situation Notes Input
+                  TextField(
+                    controller: _descriptionController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Describe your situation (Optional)',
+                      hintText: 'e.g., Armed men spotted near the gas station, need urgent response...',
+                      border: OutlineInputBorder(),
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Dispatch Alert Button
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.send_rounded, color: Colors.white),
+                    label: const Text(
+                      'SEND DISTRESS SIGNAL',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFDC2626),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _triggerSOSAlert();
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- DISPATCH ALERT TO BACKEND ---
   Future<void> _triggerSOSAlert() async {
     final List<ConnectivityResult> connectivityResult = 
         await Connectivity().checkConnectivity();
@@ -111,10 +218,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       bool success = await ApiService.triggerAlert(
-        userId: 1,
+        userId: 1, // Pass logged in user ID dynamically if stored in session
         latitude: currentLat,
         longitude: currentLong,
+        emergencyType: _selectedEmergencyType,
+        description: _descriptionController.text.trim(),
       );
+
+      _descriptionController.clear(); // Clear input field after sending
 
       if (!mounted) return;
       if (!success) {
@@ -141,6 +252,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _descriptionController.dispose();
     super.dispose();
   }
 

@@ -3,9 +3,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "sos_app.db")
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
+# On Vercel, write SQLite DB to /tmp (writable), otherwise use local directory
+if os.environ.get("VERCEL"):
+    SQLALCHEMY_DATABASE_URL = "sqlite:////tmp/sos_app.db"
+else:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./sos_app.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

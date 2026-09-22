@@ -3,11 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Base URL setup:
-  // - Chrome / Flutter Web / Windows Desktop: 'http://127.0.0.1:8000'
-  // - Android Emulator: 'http://10.0.2.2:8000'
-  // - Physical Phone: 'http://<YOUR_COMPUTER_LOCAL_IP>:8000'
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  // Production Vercel Live API URL
+  static const String baseUrl = 'https://policealertapp-gqu3.vercel.app';
 
   /// Register user POST -> /api/auth/register
   static Future<Map<String, dynamic>> registerUser({

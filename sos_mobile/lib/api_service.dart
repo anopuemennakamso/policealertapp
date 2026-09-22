@@ -1,10 +1,48 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Production Vercel Live API URL
   static const String baseUrl = 'https://policealertapp-gqu3.vercel.app';
+
+  // Key names for SharedPreferences storage
+  static const String _keyUserId = 'user_id';
+  static const String _keyRole = 'user_role';
+  static const String _keyFullName = 'user_fullname';
+
+  // ==========================================
+  // SESSION HELPERS
+  // ==========================================
+
+  /// Get the currently logged-in user's ID from local storage
+  static Future<int?> getCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyUserId);
+  }
+
+  /// Get stored user metadata
+  static Future<Map<String, String?>> getCurrentUserSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'user_id': prefs.getInt(_keyUserId)?.toString(),
+      'role': prefs.getString(_keyRole),
+      'full_name': prefs.getString(_keyFullName),
+    };
+  }
+
+  /// Clear session data on logout
+  static Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyUserId);
+    await prefs.remove(_keyRole);
+    await prefs.remove(_keyFullName);
+  }
+
+  // ==========================================
+  // AUTHENTICATION ENDPOINTS
+  // ==========================================
 
   /// Register user POST -> /api/auth/register
   static Future<Map<String, dynamic>> registerUser({
@@ -55,7 +93,7 @@ class ApiService {
     }
   }
 
-  /// Login user POST -> /api/auth/login
+  /// Login user POST -> /api/auth/login and saves user_id to session
   static Future<Map<String, dynamic>?> loginUser({
     required String email,
     required String password,
@@ -76,7 +114,17 @@ class ApiService {
       debugPrint('LOGIN Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        
+        // Save user session variables locally
+        if (data.containsKey('user_id')) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt(_keyUserId, data['user_id'] as int);
+          await prefs.setString(_keyRole, data['role'] ?? 'citizen');
+          await prefs.setString(_keyFullName, data['full_name'] ?? '');
+        }
+        
+        return data;
       }
       return null;
     } catch (e) {
@@ -85,15 +133,26 @@ class ApiService {
     }
   }
 
+  // ==========================================
+  // CITIZEN ALERT ENDPOINTS (DYNAMIC USER ID)
+  // ==========================================
+
   /// Trigger alert POST -> /api/alerts/{user_id}
+  /// If userId is omitted, it fetches the current logged-in user's ID automatically.
   static Future<bool> triggerAlert({
-    required int userId,
+    int? userId,
     required double latitude,
     required double longitude,
     String emergencyType = 'General SOS',
     String? description,
   }) async {
-    final url = Uri.parse('$baseUrl/api/alerts/$userId');
+    final activeUserId = userId ?? await getCurrentUserId();
+    if (activeUserId == null) {
+      debugPrint('TRIGGER ALERT Error: No active user session found.');
+      return false;
+    }
+
+    final url = Uri.parse('$baseUrl/api/alerts/$activeUserId');
 
     try {
       final response = await http.post(
@@ -118,8 +177,15 @@ class ApiService {
   }
 
   /// Fetch user alerts GET -> /api/alerts/{user_id}
-  static Future<List<Map<String, dynamic>>> fetchUserAlerts(int userId) async {
-    final url = Uri.parse('$baseUrl/api/alerts/$userId');
+  /// If userId is omitted, it loads alerts strictly for the logged-in user.
+  static Future<List<Map<String, dynamic>>> fetchUserAlerts([int? userId]) async {
+    final activeUserId = userId ?? await getCurrentUserId();
+    if (activeUserId == null) {
+      debugPrint('FETCH ALERTS Error: No active user session found.');
+      return [];
+    }
+
+    final url = Uri.parse('$baseUrl/api/alerts/$activeUserId');
 
     try {
       final response = await http.get(
@@ -140,6 +206,10 @@ class ApiService {
       return [];
     }
   }
+
+  // ==========================================
+  // LAW ENFORCEMENT / RESPONDER ENDPOINTS
+  // ==========================================
 
   /// Fetch all active alerts for law enforcement GET -> /api/responder/alerts
   static Future<List<Map<String, dynamic>>> fetchAllActiveAlerts() async {
@@ -209,9 +279,16 @@ class ApiService {
     }
   }
 
+  // ==========================================
+  // USER PROFILE & CONTACTS ENDPOINTS
+  // ==========================================
+
   /// Fetch User Profile GET -> /api/users/{user_id}
-  static Future<Map<String, dynamic>?> fetchUserProfile(int userId) async {
-    final url = Uri.parse('$baseUrl/api/users/$userId');
+  static Future<Map<String, dynamic>?> fetchUserProfile([int? userId]) async {
+    final activeUserId = userId ?? await getCurrentUserId();
+    if (activeUserId == null) return null;
+
+    final url = Uri.parse('$baseUrl/api/users/$activeUserId');
     try {
       final response = await http.get(
         url,
@@ -227,8 +304,11 @@ class ApiService {
   }
 
   /// Update User Profile PUT -> /api/users/{user_id}
-  static Future<bool> updateUserProfile(int userId, String name, String phone) async {
-    final url = Uri.parse('$baseUrl/api/users/$userId');
+  static Future<bool> updateUserProfile(String name, String phone, [int? userId]) async {
+    final activeUserId = userId ?? await getCurrentUserId();
+    if (activeUserId == null) return false;
+
+    final url = Uri.parse('$baseUrl/api/users/$activeUserId');
     try {
       final response = await http.put(
         url,
@@ -243,8 +323,11 @@ class ApiService {
   }
 
   /// Add Emergency Contact POST -> /api/users/{user_id}/contacts
-  static Future<bool> addContact(int userId, String name, String phone, String relation) async {
-    final url = Uri.parse('$baseUrl/api/users/$userId/contacts');
+  static Future<bool> addContact(String name, String phone, String relation, [int? userId]) async {
+    final activeUserId = userId ?? await getCurrentUserId();
+    if (activeUserId == null) return false;
+
+    final url = Uri.parse('$baseUrl/api/users/$activeUserId/contacts');
     try {
       final response = await http.post(
         url,

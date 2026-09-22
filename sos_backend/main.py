@@ -12,18 +12,6 @@ from database import engine, get_db
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SOS Emergency Backend")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.options("/{full_path:path}")
-async def options_handler(full_path: str):
-    return {}
     
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

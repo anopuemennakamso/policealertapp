@@ -16,11 +16,15 @@ app = FastAPI(title="SOS Emergency Backend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+@app.options("/{full_path:path}")
+async def options_handler(full_path: str):
+    return {}
+    
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
